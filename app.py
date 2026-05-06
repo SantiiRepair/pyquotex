@@ -1,54 +1,51 @@
 #!/usr/bin/env python3
 """PyQuotex CLI — Complete Quotex trading API client.
 
-Every public method exposed by ``stable_api.Quotex`` is reachable from this
-CLI.  Use ``python app.py --help`` or ``python app.py <command> --help`` for
+Every public method exposed by "stable_api.Quotex" is reachable from this
+CLI. Use "python app.py --help" or "python app.py <command> --help" for
 full usage.
 
 Commands
 --------
 Connection & Auth
-    login           Connect and show profile + balance
-    balance         Show current balance
+    login Connect and show profile + balance Show current balance
 
 Account Management
-    set-demo-balance    Refill / set demo (practice) balance
-    server-time         Show synced server timestamp
-    settings            Apply and retrieve trading-UI settings
+    set-demo-balance Refill / set demo (practice) balance
+    server-time Show synced server timestamp
+    settings Apply and retrieve trading-UI settings
 
 Assets & Payouts
-    assets          List all available assets with open/closed status
-    payout          Show payout % for all assets
-    payout-asset    Show payout % for a single asset
+    assets List all available assets with open/closed status
+    payout Show payout % for all asset
+    payout-asset Show payout % for a single asset
 
 Candle / Market Data
-    candles             Fetch latest candles (up to 199 per request)
-    candles-v2          Fetch candles via the v2 API path
-    candles-deep        Fetch deep historical data (parallel workers)
-    history-line        Fetch raw historical price-line data
-    candle-info         Opening / closing / remaining time of current candle
-    realtime-price      Live price stream for an asset
-    realtime-sentiment  Live trader-sentiment stream
-    realtime-candle     Live candle tick stream
+    candles Fetch latest candles (up to 199 per request)
+    candles-v2 Fetch candles via the v2 API path
+    candles-deep Fetch deep historical data (parallel workers)
+    history-line Fetch raw historical price-line data
+    candle-info Opening / closing / remaining time of current candle
+    realtime-price Live price stream for an asset
+    realtime-sentiment Live trader-sentiment stream
+    realtime-candle Live candle tick stream
 
 Trading
-    buy             Place an immediate binary option trade
-    sell            Sell / close an open position early
-    pending         Place a pending order (executed at a future time)
-    check           Check win/loss result of a trade by ID
-    result          Look up a trade result from history by operation ID
-    signals         Fetch current signal data from the signals stream
+    buy Place an immediate binary option trade
+    sell / close an open position early
+    pending Place a pending order (executed at a future time)
+    check a win/loss result of a trade by ID
+    result Look up a trade result from history by operation ID
+    signals Fetch current signal data from the signal stream
 
-History
-    history         Show recent trade history (paged)
+History Show recent trade history (paged)
 
-Indicators
-    indicator       Calculate a technical indicator (RSI, MACD, BB, …)
-    subscribe-indicator  Live indicator stream with callback
+Indicator     Calculate a technical indicator (RSI, MACD, BB, …)
+    subscribe-indicator Live indicator stream with callback
 
 Monitoring
-    monitor         Real-time candle price monitor
-    strategy        Run Triple-Confirmation strategy (demo only)
+    monitor Real-time candle price monitor
+    strategy Run Triple-Confirmation strategy (demo only)
 """
 import argparse
 import asyncio
@@ -57,7 +54,7 @@ import logging
 import sys
 import time
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 from rich import box
 from rich.console import Console
@@ -364,9 +361,9 @@ def make_parser() -> argparse.ArgumentParser:
 # ---------------------------------------------------------------------------
 
 async def connect_with_retry(
-    client: Quotex,
-    is_demo: bool,
-    max_attempts: int = 5,
+        client: Quotex,
+        is_demo: bool,
+        max_attempts: int = 5,
 ) -> bool:
     """Connect to Quotex with exponential backoff on failure."""
     if await client.check_connect():
@@ -375,12 +372,12 @@ async def connect_with_retry(
     delay = 1.0
     for attempt in range(1, max_attempts + 1):
         with Progress(
-            SpinnerColumn(),
-            TextColumn(
-                f"[cyan]Connecting (attempt {attempt}/{max_attempts})…"
-            ),
-            transient=True,
-            console=console,
+                SpinnerColumn(),
+                TextColumn(
+                    f"[cyan]Connecting (attempt {attempt}/{max_attempts})…"
+                ),
+                transient=True,
+                console=console,
         ) as prog:
             global current_progress
             current_progress = prog
@@ -675,12 +672,12 @@ async def cmd_candles_deep(client: Quotex, args: argparse.Namespace) -> None:
         )
 
     with Progress(
-        SpinnerColumn(),
-        TextColumn("[cyan]Fetching deep history…"),
-        BarColumn(),
-        TaskProgressColumn(),
-        transient=True,
-        console=console,
+            SpinnerColumn(),
+            TextColumn("[cyan]Fetching deep history…"),
+            BarColumn(),
+            TaskProgressColumn(),
+            transient=True,
+            console=console,
     ) as prog:
         prog.add_task("fetch")
         candles = await client.get_historical_candles(
@@ -862,8 +859,8 @@ async def cmd_buy(client: Quotex, args: argparse.Namespace) -> None:
     )
 
     with Progress(
-        SpinnerColumn(), TextColumn("[cyan]Sending order…"),
-        transient=True, console=console
+            SpinnerColumn(), TextColumn("[cyan]Sending order…"),
+            transient=True, console=console
     ) as prog:
         prog.add_task("buy")
         status, trade_data = await client.buy(
@@ -880,10 +877,10 @@ async def cmd_buy(client: Quotex, args: argparse.Namespace) -> None:
 
         if getattr(args, "check_win", False):
             with Progress(
-                SpinnerColumn(),
-                TextColumn("[cyan]{task.description}"),
-                transient=True,
-                console=console,
+                    SpinnerColumn(),
+                    TextColumn("[cyan]{task.description}"),
+                    transient=True,
+                    console=console,
             ) as prog:
                 task_id = prog.add_task("Waiting for trade closure...")
                 check_task = asyncio.create_task(
@@ -932,8 +929,8 @@ async def cmd_sell(client: Quotex, args: argparse.Namespace) -> None:
     if not await connect_with_retry(client, is_demo):
         return
     with Progress(
-        SpinnerColumn(), TextColumn("[cyan]Sending sell request…"),
-        transient=True, console=console
+            SpinnerColumn(), TextColumn("[cyan]Sending sell request…"),
+            transient=True, console=console
     ) as prog:
         prog.add_task("sell")
         result = await client.sell_option(args.trade_id)
@@ -969,8 +966,8 @@ async def cmd_pending(client: Quotex, args: argparse.Namespace) -> None:
     )
 
     with Progress(
-        SpinnerColumn(), TextColumn("[cyan]Sending pending order…"),
-        transient=True, console=console
+            SpinnerColumn(), TextColumn("[cyan]Sending pending order…"),
+            transient=True, console=console
     ) as prog:
         prog.add_task("pending")
         status, data = await client.open_pending(
@@ -997,8 +994,8 @@ async def cmd_check(client: Quotex, args: argparse.Namespace) -> None:
         f"[cyan]Checking result for Trade ID:[/] [bold]{args.trade_id}[/]"
     )
     with Progress(
-        SpinnerColumn(), TextColumn("[cyan]{task.description}"),
-        transient=True, console=console
+            SpinnerColumn(), TextColumn("[cyan]{task.description}"),
+            transient=True, console=console
     ) as prog:
         task_id = prog.add_task("Waiting…")
         check_task = asyncio.create_task(
@@ -1152,8 +1149,8 @@ async def cmd_indicator(client: Quotex, args: argparse.Namespace) -> None:
         f"[yellow]{asset}[/] (period={args.period}, tf={args.timeframe}s)"
     )
     with Progress(
-        SpinnerColumn(), TextColumn("[cyan]Fetching history + computing…"),
-        transient=True, console=console
+            SpinnerColumn(), TextColumn("[cyan]Fetching history + computing…"),
+            transient=True, console=console
     ) as prog:
         prog.add_task("indicator")
         result = await client.calculate_indicator(
@@ -1225,7 +1222,7 @@ async def cmd_monitor(client: Quotex, args: argparse.Namespace) -> None:
 
 
 async def cmd_strategy(client: Quotex, args: argparse.Namespace) -> None:
-    """Run Triple-Confirmation strategy."""
+    """Run a Triple-Confirmation strategy."""
     if not await connect_with_retry(client, True):
         return
     strategy = TripleConfirmationStrategy(
@@ -1250,10 +1247,10 @@ async def cmd_strategy(client: Quotex, args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 def _print_candles_table(
-    candles: list[dict],
-    asset: str,
-    period: int,
-    title: str | None = None,
+        candles: list[dict],
+        asset: str,
+        period: int,
+        title: str | None = None,
 ) -> None:
     """Render a Rich table of candle data."""
     tbl_title = title or f"🕯️  [bold]Candles — {asset} ({period}s)[/]"
@@ -1298,7 +1295,7 @@ def _print_candles_table(
 
 
 def _save_candles_csv(candles: list[dict], filepath: str) -> None:
-    """Save candles list to a CSV file."""
+    """Save the candles list to a CSV file."""
     if not candles:
         return
     fieldnames = list(candles[0].keys())
@@ -1377,33 +1374,33 @@ async def cmd_test_all(client: Quotex, args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 COMMAND_MAP: dict[str, Any] = {
-    "login":               cmd_login,
-    "balance":             cmd_balance,
-    "server-time":         cmd_server_time,
-    "set-demo-balance":    cmd_set_demo_balance,
-    "settings":            cmd_settings,
-    "assets":              cmd_assets,
-    "payout":              cmd_payout,
-    "payout-asset":        cmd_payout_asset,
-    "candles":             cmd_candles,
-    "candles-v2":          cmd_candles_v2,
-    "candles-deep":        cmd_candles_deep,
-    "history-line":        cmd_history_line,
-    "candle-info":         cmd_candle_info,
-    "realtime-price":      cmd_realtime_price,
-    "realtime-sentiment":  cmd_realtime_sentiment,
-    "realtime-candle":     cmd_realtime_candle,
-    "buy":                 cmd_buy,
-    "sell":                cmd_sell,
-    "pending":             cmd_pending,
-    "check":               cmd_check,
-    "result":              cmd_result,
-    "signals":             cmd_signals,
-    "history":             cmd_history,
-    "indicator":           cmd_indicator,
-    "monitor":             cmd_monitor,
-    "strategy":            cmd_strategy,
-    "test-all":            cmd_test_all,
+    "login": cmd_login,
+    "balance": cmd_balance,
+    "server-time": cmd_server_time,
+    "set-demo-balance": cmd_set_demo_balance,
+    "settings": cmd_settings,
+    "assets": cmd_assets,
+    "payout": cmd_payout,
+    "payout-asset": cmd_payout_asset,
+    "candles": cmd_candles,
+    "candles-v2": cmd_candles_v2,
+    "candles-deep": cmd_candles_deep,
+    "history-line": cmd_history_line,
+    "candle-info": cmd_candle_info,
+    "realtime-price": cmd_realtime_price,
+    "realtime-sentiment": cmd_realtime_sentiment,
+    "realtime-candle": cmd_realtime_candle,
+    "buy": cmd_buy,
+    "sell": cmd_sell,
+    "pending": cmd_pending,
+    "check": cmd_check,
+    "result": cmd_result,
+    "signals": cmd_signals,
+    "history": cmd_history,
+    "indicator": cmd_indicator,
+    "monitor": cmd_monitor,
+    "strategy": cmd_strategy,
+    "test-all": cmd_test_all,
 }
 
 

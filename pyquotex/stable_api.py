@@ -16,6 +16,7 @@ from .config import (
 from .global_value import AuthStatus
 from .utils.account_type import AccountType
 from .utils.indicators import TechnicalIndicators
+from .utils.optimization import OptimizedQuotexMixin
 from .utils.processor import (
     calculate_candles,
     process_candles_v2,
@@ -23,7 +24,6 @@ from .utils.processor import (
     process_tick,
     aggregate_candle
 )
-from .utils.optimization import OptimizedQuotexMixin
 from .utils.services import truncate
 
 logger = logging.getLogger(__name__)
@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 # Default timeout (seconds) for async polling loops
 DEFAULT_TIMEOUT = 30
 
-# Monotonically-increasing counter for WebSocket request indices.
-# Seeded from the current millisecond timestamp so indices remain
+# Monotonically increasing counter for WebSocket request indices.
+# Seeded from the current millisecond timestamp, so indices remain
 # browser-style large integers while being globally unique across
 # all workers and loop iterations within a process (fixes #85).
 _request_counter = itertools.count(int(time.time() * 1000))
@@ -595,7 +595,8 @@ class Quotex(OptimizedQuotexMixin):
             logger.error(
                 "Websocket failed to connect or connection was rejected."
             )
-            self.session_data = {}
+            if "token" in self.session_data:
+                self.session_data["token"] = None
             return False, "Websocket connection rejected."
 
         return check, reason
@@ -1059,7 +1060,8 @@ class Quotex(OptimizedQuotexMixin):
             return []
 
         account_type = AccountType.DEMO if self.account_is_demo else AccountType.REAL
-        return await self.api.get_trader_history(account_type, page=1)
+        history = await self.api.get_trader_history(account_type, page=1)
+        return list(history)
 
     async def buy(
             self,
@@ -1069,7 +1071,10 @@ class Quotex(OptimizedQuotexMixin):
             duration: int,
             time_mode: str = "TIME"
     ) -> tuple[bool, Any]:
-        """Buy Binary option"""
+        """
+        Places a buy order for a specified asset, direction, and duration.
+        Waits for WebSocket confirmation of the buy and returns the result.
+        """
         if self.api is None:
             return False, "API not initialized"
 
@@ -1088,7 +1093,7 @@ class Quotex(OptimizedQuotexMixin):
         await self.api.settings_apply(asset, duration, is_fast_option)
 
         await self.api.buy(
-            amount, asset, direction, duration, request_id, is_fast_option
+            amount, asset, direction, duration, request_id, is_fast_option, time_mode
         )
 
         timeout = duration + 5 if duration else 30
@@ -1129,11 +1134,13 @@ class Quotex(OptimizedQuotexMixin):
         self.api.pending_id = None
         user_settings = await self.get_profile()
         offset_zone = user_settings.offset if user_settings else 0
-        open_time_int = expiration.get_next_timeframe(
-            int(time.time()),
-            offset_zone,
-            duration,
-            open_time
+        open_time_int = int(
+            expiration.get_next_timeframe(
+                int(time.time()),
+                offset_zone,
+                duration,
+                open_time
+            )
         )
         await self.api.open_pending(
             amount, asset, direction, duration, open_time_int

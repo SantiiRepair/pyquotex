@@ -26,9 +26,9 @@ async def test_deep_history():
     # Isso deve forçar pelo menos 2-3 lotes (já que cada lote costuma vir com 50-199 velas)
     amount_of_history = 7200
 
-    def progress(fetched, total, count):
+    def progress(fetched, total, count, worker_label="Worker"):
         percent = (fetched / total) * 100
-        print(f"⏳ Progresso: {percent:.1f}% | Velas acumuladas: {count}")
+        print(f"⏳ Progresso: {percent:.1f}% | Velas acumuladas: {count} | {worker_label}")
 
     print(f"📊 Buscando histórico profundo para {asset}...")
     candles = await client.get_candles_deep(

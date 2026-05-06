@@ -1,16 +1,17 @@
 """Module for Quotex websocket."""
 import asyncio
 import logging
-import os
-import ssl
 import time
 from collections import defaultdict
 from typing import Any, Callable
 
-import certifi
 import httpx
 
-from .global_value import ConnectionState, WebsocketStatus, AuthStatus
+from .global_value import (
+    ConnectionState,
+    WebsocketStatus,
+    AuthStatus
+)
 from .network.history import GetHistory
 from .network.login import Login
 from .network.logout import Logout
@@ -30,23 +31,6 @@ from .ws.objects.profile import Profile
 from .ws.objects.timesync import TimeSync
 
 logger = logging.getLogger(__name__)
-
-cert_path = certifi.where()
-os.environ['SSL_CERT_FILE'] = cert_path
-os.environ['WEBSOCKET_CLIENT_CA_BUNDLE'] = cert_path
-
-# Unified SSL context for both HTTP and WebSocket to ensure consistent JA3 fingerprint
-unified_ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-unified_ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
-unified_ssl_context.maximum_version = ssl.TLSVersion.TLSv1_3
-# Browser-like cipher suite to avoid JA3 detection
-unified_ssl_context.set_ciphers(
-    'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:'
-    'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:'
-    'ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:'
-    'DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384'
-)
-unified_ssl_context.load_verify_locations(cert_path)
 
 
 class QuotexAPI:
@@ -135,11 +119,6 @@ class QuotexAPI:
         self.browser.set_headers()
         self.settings = Settings(self)
         self.event_registry = EventRegistry()
-        self._http_client = httpx.AsyncClient(
-            verify=unified_ssl_context,
-            timeout=30.0,
-            follow_redirects=True,
-        )
         self.profit_today: float | None = None
         self.heartbeat_task: asyncio.Task | None = None
 
@@ -177,7 +156,11 @@ class QuotexAPI:
                 else str(msg)
             )
 
+            if self.state.auth_status != AuthStatus.AUTHENTICATED:
+                print(f"[WS DEBUG] Received while not authenticated: {msg_str[:200]}")
+
             if "authorization/reject" in msg_str:
+                print(f"[DEBUG] Websocket authorization rejected: {msg_str}")
                 self.state.websocket_error_reason = (
                     "Websocket connection rejected."
                 )
@@ -187,6 +170,7 @@ class QuotexAPI:
                 )
                 return
             elif "s_authorization" in msg_str:
+                print("[DEBUG] Websocket authorization SUCCESS!")
                 self.state.auth_status = AuthStatus.AUTHENTICATED
                 self.state.status = WebsocketStatus.CONNECTED
                 await self.event_registry.set_event(
@@ -195,6 +179,7 @@ class QuotexAPI:
                 await self.event_registry.set_event(
                     "status_changed", self.state.status
                 )
+                return
 
             # Detect Socket.IO prefix
             is_control = msg_str and msg_str[0].isdigit()
@@ -220,7 +205,6 @@ class QuotexAPI:
                         )
                         else data_json
                     )
-
                     pass
                 else:
                     pass
@@ -600,15 +584,39 @@ class QuotexAPI:
     async def settings_apply(
             self,
             asset: str,
-            expiration: int,
+            period: int,
             is_fast_option: bool = False,
-            end_time: int | None = None
+            end_time: int | None = None,
+            deal=5,
+            percent_mode=False,
+            percent_deal=1
     ) -> None:
         """Apply asset and time settings before placing an order."""
         payload = {
-            "asset": asset,
-            "time": expiration,
-            "isFastOption": is_fast_option,
+            "chartId": "graph",
+            "settings": {
+                "chartId": "graph",
+                "chartType": 2,
+                "currentExpirationTime": int(time.time()) if not is_fast_option else end_time,
+                "isFastOption": is_fast_option,
+                "isFastAmountOption": percent_mode,
+                "isIndicatorsMinimized": False,
+                "isIndicatorsShowing": True,
+                "isShortBetElement": False,
+                "chartPeriod": 4,
+                "currentAsset": {
+                    "symbol": asset
+                },
+                "dealValue": deal,
+                "dealPercentValue": percent_deal,
+                "isVisible": True,
+                "timePeriod": period,
+                "gridOpacity": 8,
+                "isAutoScrolling": 1,
+                "isOneClickTrade": True,
+                "upColor": "#0FAF59",
+                "downColor": "#FF6251"
+            }
         }
         if end_time:
             payload["endTime"] = end_time
@@ -765,18 +773,30 @@ class QuotexAPI:
             await self.authenticate()
 
         self.websocket_client = WebsocketClient(self)
+
+        # Ensure we have a valid User-Agent, fallback to a modern one if missing
+        ua = (
+                self.session_data.get("user_agent")
+                or "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36"
+        )
+
         extra_headers = {
-            "User-Agent": self.session_data.get("user_agent", ""),
+            "User-Agent": ua,
             "Origin": self.https_url,
+            "Referer": f"{self.https_url}/{self.lang}/trade",
             "Cookie": self.session_data.get("cookies", ""),
             "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
             "Accept-Encoding": "gzip, deflate, br",
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
+            "Sec-WebSocket-Extensions": "permessage-deflate; client_max_window_bits",
         }
         self._websocket_task = asyncio.create_task(
             self.websocket_client.run_forever(
-                url=self.wss_url, extra_headers=extra_headers, ssl=unified_ssl_context
+                url=self.wss_url,
+                extra_headers=extra_headers,
+                ssl=self.browser._ssl_context
             )
         )
         for _ in range(100):
@@ -817,8 +837,8 @@ class QuotexAPI:
             await self.websocket_client.close()
             # Explicitly trigger cleanup to ensure heartbeat is cancelled
             self._on_close(1000, "Graceful closure")
-        if self._http_client:
-            await self._http_client.aclose()
+        # if self._http_client:
+        #    await self._http_client.aclose()
         return True
 
     @property

@@ -4,6 +4,8 @@ import re
 import sys
 from typing import Any
 
+from bs4.element import AttributeValueList
+
 from pyquotex.config import update_session
 from pyquotex.network.navigator import Browser
 from pyquotex.utils import json_utils as json
@@ -25,25 +27,38 @@ class Login(Browser):
         self.headers: dict[str, str] = self.get_headers()
         self.full_url: str = f"{self.https_base_url}/{api.lang}"
 
-    async def get_token(self) -> str | None:
-        self.headers["Connection"] = "keep-alive"
-        self.headers["Accept-Encoding"] = "gzip, deflate, br"
-        self.headers["Accept-Language"] = (
-            "pt-BR,pt;q=0.8,en-US;q=0.5,en;q=0.3"
+    async def get_sign_page(self):
+        headers = {}
+        headers["Connection"] = "keep-alive"
+        headers["Accept-Encoding"] = "gzip, deflate, br"
+        headers["Accept-Language"] = "pt-BR,pt;q=0.8,en-US;q=0.5,en;q=0.3"
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+        headers["Referer"] = self.api.https_url
+        headers["Upgrade-Insecure-Requests"] = "1"
+        headers["Sec-Ch-Ua-Mobile"] = "?0"
+        headers["Sec-Ch-Ua-Platform"] = '"Linux"'
+        headers["Sec-Fetch-Site"] = "same-origin"
+        headers["Sec-Fetch-User"] = "?1"
+        headers["Sec-Fetch-Dest"] = "document"
+        headers["Sec-Fetch-Mode"] = "navigate"
+        headers["Dnt"] = "1"
+        response = await self.send_request(
+            method="GET",
+            url=self.full_url,
+            headers=headers
         )
-        self.headers["Accept"] = (
-            "text/html,application/xhtml+xml,application/xml;q=0.9,"
-            "image/avif,image/webp,*/*;q=0.8"
-        )
+
+        if not response.is_success:
+            return response
+
+        cookies_dict = dict(response.cookies)
+        cookies_str = '; '.join([f"{key}={value}" for key, value in cookies_dict.items()])
+        self.cookies = cookies_str
+        return response
+
+    async def get_token(self) -> None | str | AttributeValueList:
+        self.headers["Cookie"] = self.cookies or ''
         self.headers["Referer"] = f"{self.full_url}/sign-in"
-        self.headers["Upgrade-Insecure-Requests"] = "1"
-        self.headers["Sec-Ch-Ua-Mobile"] = "?0"
-        self.headers["Sec-Ch-Ua-Platform"] = '"Linux"'
-        self.headers["Sec-Fetch-Site"] = "same-origin"
-        self.headers["Sec-Fetch-User"] = "?1"
-        self.headers["Sec-Fetch-Dest"] = "document"
-        self.headers["Sec-Fetch-Mode"] = "navigate"
-        self.headers["Dnt"] = "1"
         await self.send_request(
             "GET",
             f"{self.full_url}/sign-in/modal/"
@@ -87,44 +102,47 @@ class Login(Browser):
             data=data
         )
 
-    async def get_profile(self) -> tuple[Any, dict[str, Any] | None]:
-        self.response = await self.send_request(
+    async def get_profile(self):
+        headers = {
+            "Referer": f"{self.api.https_url}/{self.api.lang}/trade",
+            "Cookie": self.api.session_data["cookies"]
+        }
+        response = await self.send_request(
             method="GET",
-            url=f"{self.full_url}/trade"
+            url=f"{self.api.https_url}/api/v1/cabinets/digest",
+            headers=headers
         )
-        if self.response:
-            script_tags = self.get_soup().find_all(
-                "script",
-                {"type": "text/javascript"}
-            )
-            script_content = script_tags[0].get_text() if script_tags else "{}"
-            match = re.sub(
-                "window.settings = ",
-                "",
-                script_content.strip().replace(";", "")
-            )
-            self.cookies = self.get_cookies()
-            try:
-                settings_data = json.loads(match)
-                self.ssid = settings_data.get("token")
-                self.api.session_data["cookies"] = self.cookies
-                self.api.session_data["token"] = self.ssid
-                self.api.session_data["user_agent"] = (
-                    self.headers["User-Agent"]
-                )
+        if response.is_success:
+            data = response.json()["data"]
+            self.api.session_data["token"] = data.get("token")
 
-                update_session(self.api.username, self.api.session_data)
-                return self.response, settings_data
-            except Exception:
-                return self.response, None
+        return response
 
-        return None, None
-
-    async def _get(self) -> Any:
-        return await self.send_request(
-            method="GET",
-            url=f"{self.full_url}/trade"
+    async def get_settings(self) -> tuple[Any, dict[str, Any] | None]:
+        script_tags = self.get_soup().find_all(
+            "script",
+            {"type": "text/javascript"}
         )
+        script_content = script_tags[0].get_text() if script_tags else "{}"
+        match = re.sub(
+            "window.settings = ",
+            "",
+            script_content.strip().replace(";", "")
+        )
+        self.cookies = self.get_cookies()
+        try:
+            settings_data = json.loads(match)
+            self.ssid = settings_data.get("token")
+            self.api.session_data["cookies"] = self.cookies
+            self.api.session_data["token"] = self.ssid
+            self.api.session_data["user_agent"] = (
+                self.headers["User-Agent"]
+            )
+
+            update_session(self.api.username, self.api.session_data)
+            return self.response, settings_data
+        except Exception:
+            return self.response, None
 
     async def _post(self, data: dict[str, Any]) -> tuple[bool, str]:
         """Send post-request for Quotex API login http resource.
@@ -150,15 +168,16 @@ class Login(Browser):
             )
             await self.awaiting_pin(data, input_message)
         await asyncio.sleep(1)
-        success = self.success_login()
+        success = await self.success_login()
         return success
 
-    def success_login(self) -> tuple[bool, str]:
+    async def success_login(self) -> tuple[bool, str]:
         if self.response is None:
             return False, "No response received."
 
         response_url = str(self.response.url)
         if "trade" in response_url:
+            await self.get_settings()
             return True, "Login successful."
 
         soup = self.get_soup()
@@ -188,6 +207,13 @@ class Login(Browser):
         :param str user_data_dir: The optional value for path userdata.
         :returns: The instance of: class:`httpx.Response`.
         """
+        home = await self.get_sign_page()
+        reason_msg = 'Access page with SSL RESOLVER'
+        if not home.is_success:
+            reason_msg = f'Error on access page: {home.reason_phrase}'
+
+        print(reason_msg)
+
         data = {
             "_token": await self.get_token(),
             "email": username,
@@ -196,7 +222,5 @@ class Login(Browser):
 
         }
         status, msg = await self._post(data)
-        if status:
-            await self.get_profile()
 
         return status, msg

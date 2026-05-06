@@ -1,11 +1,10 @@
 """Async HTTP browser client using httpx for Quotex API communication."""
 import logging
-import ssl
 from typing import Any
 
-import certifi
 import httpx
 from bs4 import BeautifulSoup
+from httpx import Response
 from typing_extensions import Self
 
 logger = logging.getLogger("Browser")
@@ -13,6 +12,13 @@ logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
 logger.addHandler(handler)
+
+from pyquotex.network.ssl_utils import (
+    create_ssl_context,
+    CIPHER_SUITE_FIREFOX
+)
+
+USER_AGENT_DEFAULT = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/119.0"
 
 
 class Browser:
@@ -27,17 +33,13 @@ class Browser:
         self.proxies: dict[str, str] | str | None = kwargs.pop('proxies', None)
         self.debug: bool = kwargs.pop('debug', False)
 
-        # Build SSL context
-        cert_path = certifi.where()
-        self._ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-        self._ssl_context.load_verify_locations(cert_path)
-        self._ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
-        self._ssl_context.maximum_version = ssl.TLSVersion.TLSv1_3
+        # Build SSL context with specified cipher suite and ECDH curve
+        self._ssl_context = create_ssl_context(cipher_suite=CIPHER_SUITE_FIREFOX)
 
         if self.server_hostname:
             self._ssl_context.check_hostname = False
 
-        self.headers: dict[str, str] = self.get_headers()
+        self.headers = self.get_headers()
 
         # Build httpx.AsyncClient
         self._client = httpx.AsyncClient(
@@ -71,14 +73,11 @@ class Browser:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
 
-    def get_headers(self) -> dict[str, str]:
+    def get_headers(self) -> dict[str, str] | None:
         self.default_headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:109.0) "
-                "Gecko/20100101 Firefox/119.0"
-            )
+            "User-Agent": USER_AGENT_DEFAULT,
         }
-        return dict(self.default_headers)
+        return self.default_headers
 
     def set_headers(self, headers: dict[str, str] | None = None) -> None:
         if self.default_headers:
@@ -107,7 +106,7 @@ class Browser:
         )
 
     def get_json(self) -> Any:
-        """Parse last response as JSON."""
+        """Parse the last response as JSON."""
         if self.response and self.response.status_code >= 400:
             raise RuntimeError(
                 f"HTTP {self.response.status_code}: "
@@ -124,20 +123,20 @@ class Browser:
             url: str,
             headers: dict[str, str] | None = None,
             **kwargs: Any
-    ) -> httpx.Response:
+    ) -> Response:
         """Send an async HTTP request using httpx.
 
         Args:
             method: HTTP method (GET, POST, etc.)
             url: Target URL
             headers: Optional additional headers
-            **kwargs: Additional httpx request arguments (data, json, 
+            **kwargs: Additional httpx request arguments (data, JSON,
                       params, etc.)
 
         Returns:
             httpx.Response object
         """
-        merged_headers = dict(self.headers)
+        merged_headers = self.headers or {}
         if headers:
             merged_headers.update(headers)
 

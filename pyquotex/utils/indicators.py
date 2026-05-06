@@ -1,4 +1,3 @@
-import math
 import statistics
 
 
@@ -44,6 +43,11 @@ class TechnicalIndicators:
         avg_loss = sum(loss[:period]) / period
 
         rsi_values: list[float] = []
+
+        # Calculate initial RSI for the first period
+        rs = avg_gain / (avg_loss if avg_loss != 0 else 0.00001)
+        rsi_values.append(round(100 - (100 / (1 + rs)), 2))
+
         for i in range(period, len(deltas)):
             avg_gain = (avg_gain * (period - 1) + gain[i]) / period
             avg_loss = (avg_loss * (period - 1) + loss[i]) / period

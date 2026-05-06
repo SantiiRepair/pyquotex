@@ -20,7 +20,8 @@ class Buy(Base):
             direction: str,
             duration: int,
             request_id: int,
-            is_fast_option: bool
+            is_fast_option: bool,
+            time_mode: str,
     ) -> None:
         option_type = 3 if is_fast_option else 1
 
@@ -30,7 +31,12 @@ class Buy(Base):
         )
         expiration = expiration_time
 
-        if asset.endswith("_otc") and not is_fast_option:
+        """if asset.endswith("_otc") and not is_fast_option:
+            option_type = 100
+            expiration = duration"""
+
+        # Modo TIMER: funciona para OTC e não-OTC
+        if time_mode == "TIMER" and not is_fast_option:
             option_type = 100
             expiration = duration
 
